@@ -6,11 +6,13 @@ import FatexiBall from "@/components/FatexiBall";
 import {
   ComposedChart,
   Bar,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ReferenceLine,
 } from "recharts";
 
 function RevealSection({ children, delay = 0, className = "" }: { children: React.ReactNode; delay?: number; className?: string }) {
@@ -81,88 +83,156 @@ function getGanZhiIndex(ganzhi: string): number {
 
 // heavenly stems cycle relative to day master
 function ganRelation(dmGan: string, otherGan: string): number {
-  if (dmGan === otherGan) return 50; // 相同
-  if (GENERATING[dmGan]?.includes(WUXING_GAN[otherGan])) return 80; // 我生
-  if (GENERATING[WUXING_GAN[otherGan]]?.includes(dmGan)) return 30; // 生我
-  if (OVERCOMING[dmGan]?.includes(WUXING_GAN[otherGan])) return 90; // 我剋
-  if (OVERCOME_BY[dmGan]?.includes(WUXING_GAN[otherGan])) return 20; // 剋我
+  if (dmGan === otherGan) return 50;
+  if (GENERATING[dmGan]?.includes(WUXING_GAN[otherGan])) return 80;
+  if (GENERATING[WUXING_GAN[otherGan]]?.includes(dmGan)) return 30;
+  if (OVERCOMING[dmGan]?.includes(WUXING_GAN[otherGan])) return 90;
+  if (OVERCOME_BY[dmGan]?.includes(WUXING_GAN[otherGan])) return 20;
   return 50;
 }
 
-function ganZhiScore(dmGan: string, zhi: string): number {
-  const wx = WUXING_ZHI[zhi];
-  const gs = WUXING_SCORE[wx] || 70;
-  return gs;
+// ── 流年天干地支週期（60甲子）──────────────────────────────────────────────
+// 從 1984 甲子年開始算，流年 = (targetYear - 1984) % 60
+function liuNianGanZhi(targetYear: number): string {
+  const offset = (targetYear - 1984 + 60) % 60;
+  const gan = GAN[offset % 10];
+  const zhi = ZHI[offset % 12];
+  return gan + zhi;
 }
 
-// Calculate wealth/career/love/vitality for a specific time point
-// Based on user's bazi + zodiac + time cycle
+// 根據日主五行，計算某流年的能量強度（相對成長指數，返回偏離基準的分數）
+// 正數=加分，負數=減分，範圍大約 -25 ~ +35
+function liuNianPower(dm: string, liuNianGZ: string): number {
+  const dmWx = WUXING_GAN[dm] || '火';
+  const lNgan = liuNianGZ[0]; // 天干
+  const lNzhi = liuNianGZ[1]; // 地支
+  const lNWx = WUXING_ZHI[lNzhi];
+  
+  // 天干合化（化氣五行）
+  const heHua: Record<string,string> = {
+    '甲己':'土','乙庚':'金','丙辛':'水','丁壬':'木','戊癸':'火'
+  };
+  const heHuaWx = heHua[dm + lNgan] || null;
+  
+  // 地支會方（地支三合局）
+  const huiFang: Record<string,string[]> = {
+    '申子辰':'水','亥卯未':'木','寅午戌':'火','巳酉丑':'金'
+  };
+  let huiFangBonus = 0;
+  for (const [ Combo, wx ] of Object.entries(huiFang)) {
+    if (Combo.includes(lNzhi) && (Combo[0] === dm || Combo[1] === dm || Combo[2] === dm)) {
+      huiFangBonus += 8;
+    }
+  }
+  
+  // 生助日主（+分）
+  let power = 0;
+  if (heHuaWx === dmWx) power += 15; // 天干化氣助日主
+  if (GENERATING[dmWx]?.includes(lNWx)) power += 10; // 地支生
+  if (lNWx === dmWx) power += 12; // 地支同五行
+  
+  // 剋泄日主（-分）
+  if (OVERCOMING[dmWx]?.includes(lNWx)) power -= 12; // 地支剋
+  if (OVERCOME_BY[dmWx]?.includes(lNWx)) power -= 8; // 被地支剋
+  if (OVERCOME_BY[dmWx]?.includes(WUXING_GAN[lNgan] || '')) power -= 6; // 天干被剋
+  
+  // 三合局加成
+  power += huiFangBonus;
+  
+  return Math.max(-25, Math.min(35, power));
+}
+
+// 星座月度能量（每個星座的旺點）
+const ZODIAC_MONTH_BONUS: Record<string, { wealth: number; career: number; love: number; vitality: number }> = {
+  '牡羊': { wealth: 12, career: 18, love: 8,  vitality: 15 },
+  '金牛': { wealth: 20, career: 6,  love: -5, vitality: 8  },
+  '雙子': { wealth: 8,  career: 20, love: 12, vitality: 5  },
+  '巨蟹': { wealth: 5,  career: 8,  love: 22, vitality: 10 },
+  '獅子': { wealth: 15, career: 15, love: 15, vitality: 20 },
+  '處女': { wealth: 22, career: 10, love: 18, vitality: 5  },
+  '天秤': { wealth: 10, career: 22, love: 12, vitality: 8  },
+  '天蠍': { wealth: 8,  career: 12, love: 20, vitality: 10 },
+  '射手': { wealth: 5,  career: 8,  love: 10, vitality: 22 },
+  '摩羯': { wealth: 20, career: 22, love: 5,  vitality: 12 },
+  '水瓶': { wealth: 8,  career: 15, love: 8,  vitality: 18 },
+  '雙魚': { wealth: 10, career: 5,  love: 22, vitality: 8  },
+};
+
+// 將 0-100 分數轉換為「相對成長指數」（以 65 為基準 = 100）
+// 高於 65 指數 >100，低於 65 指數 <100
+function toGrowthIndex(score: number): number {
+  const baseline = 65;
+  return Math.round(100 + (score - baseline) * (100 / 35));
+}
+
+// 計算單一維度的成長指數
+// baseOffset = 該維度相對於基準的分數偏移
+function metricIndex(baseOffset: number, cycleBonus: number): number {
+  const raw = 65 + baseOffset + cycleBonus;
+  return toGrowthIndex(raw);
+}
+
+// Calculate 4 metrics for a specific time point (growth index, baseline=100)
 function calcMetrics(
   bazi: any,
   western: any,
   targetYear: number,
   targetMonth: number,
   targetDay: number,
-  currentYear: number,
-  currentMonth: number,
-  currentDay: number
+  _currentYear: number,
+  _currentMonth: number,
+  _currentDay: number
 ) {
   const dm = bazi?.dayPillar?.[0] || '丙';
   const dmWx = WUXING_GAN[dm] || '火';
-  
-  // Year cycle (60-year, base on birth year)
-  const birthYear = bazi?.birthYear || currentYear;
+  const birthYear = bazi?.birthYear || targetYear;
   const yearDiff = targetYear - birthYear;
-  const cycleOffset = yearDiff % 60;
+  const liuNianGZ = liuNianGanZhi(targetYear);
+  const lNPower = liuNianPower(dm, liuNianGZ);
   
-  // Month pillar cycle: 0-11 from birth month
-  const monthDiff = (targetMonth - (bazi?.birthMonth || 1) + 12) % 12;
+  // 流年干支組合的額外能量
+  const lNgan = liuNianGZ[0];
+  const lNzhHua = WUXING_GAN[lNgan] || '土';
+  const ganHe = GENERATING[lNzhHua]?.includes(dmWx) ? 6 : 0;
+  const ganKe = OVERCOMING[lNzhHua]?.includes(dmWx) ? -5 : 0;
   
-  // Day cycle: each day has different stem-branch
-  const dayBase = getGanZhiIndex(bazi?.dayPillar || '甲子');
-  const dayDiff = ((targetYear * 365 + targetMonth * 30 + targetDay) - (currentYear * 365 + currentMonth * 30 + currentDay));
+  // 十年大運（每10年一切換，取年干陰陽順逆）
+  const dayunOffset = Math.floor(yearDiff / 10) % 10;
+  const dayunBonus = Math.sin(dayunOffset * Math.PI / 5) * 8;
   
-  // Solar term score (simplified: year/month cycle)
-  const solarScore = (Math.sin(2 * Math.PI * (cycleOffset / 10)) * 20 + 60);
+  // 月份能量（星座旺點）
+  const monthKey = western?.sunSign || '天秤';
+  const monthBonus = ZODIAC_MONTH_BONUS[monthKey] || { wealth: 0, career: 0, love: 0, vitality: 0 };
   
-  // Bazi harmony score
-  const yearPillar = bazi?.yearPillar || '甲子';
-  const monthPillar = bazi?.monthPillar || '甲子';
-  const yearGanRel = ganRelation(dm, yearPillar[0]);
-  const monthGanRel = ganRelation(dm, monthPillar[0]);
+  // ── 財富：年柱 + 財帛宮 + 流年能量 ──────────────────────────────
+  // 財帛宮在月支，流年天干為用神時加分
+  const wealth = metricIndex(
+    lNPower * 0.8 + ganHe - ganKe * 0.5 + dayunBonus * 0.6,
+    monthBonus.wealth
+  );
   
-  // Zodiac bonus based on target year
-  const zodiacYearSign = (targetYear - 3) % 12;
-  const zodiacBonus = Math.cos(2 * Math.PI * zodiacYearSign / 12) * 15;
+  // ── 事業：月柱 + 官殺星 + 土星周期（約29年）────────────────────
+  const saturnCycle = Math.sin(2 * Math.PI * yearDiff / 29) * 10;
+  const career = metricIndex(
+    lNPower * 0.6 + ganHe * 0.8 + dayunBonus * 0.8 + saturnCycle * 0.5,
+    monthBonus.career
+  );
   
-  const base = WUXING_SCORE[dmWx] || 70;
+  // ── 愛情：日支夫妻宮 + 金星周期（每8年） + 月亮周期 ─────────────
+  const venusCycle = Math.sin(2 * Math.PI * yearDiff / 8) * 10;
+  const love = metricIndex(
+    lNPower * 0.5 + ganHe * 0.6 + dayunBonus * 0.4 + venusCycle * 0.8,
+    monthBonus.love
+  );
   
-  // Wealth: year stem-branch + generating relationship
-  const wealthBase = (base * 0.4 + (solarScore + yearGanRel + monthGanRel) * 0.15 + zodiacBonus);
-  const wealth = Math.min(95, Math.max(25, Math.round(wealthBase + Math.sin(cycleOffset / 5) * 12)));
-  
-  // Career: month pillar + social energy
-  const careerBase = (base * 0.35 + (solarScore + monthGanRel + yearGanRel) * 0.18 + Math.cos(monthDiff / 6) * 10);
-  const career = Math.min(95, Math.max(25, Math.round(careerBase + Math.cos(cycleOffset / 4) * 10)));
-  
-  // Love: zodiac + moon sign relationships
-  const loveBase = (base * 0.3 + (solarScore + 40) * 0.2 + Math.sin(dayDiff / 7) * 15 + zodiacBonus);
-  const love = Math.min(95, Math.max(25, Math.round(loveBase)));
-  
-  // Vitality: time of day (hour) + sun sign energy
-  const hourZriIdx = (dayBase + dayDiff) % 60;
-  const hourWx = WUXING_ZHI[ZHI[hourZriIdx % 12]];
-  const vitalityBase = (base * 0.25 + (solarScore + 50) * 0.25 + Math.cos(cycleOffset / 3) * 12 + (WUXING_SCORE[hourWx] || 70) * 0.15);
-  const vitality = Math.min(95, Math.max(25, Math.round(vitalityBase)));
+  // ── 能量：時柱 + 天王星周期（約7年） + 上升點 ───────────────────
+  const uranusCycle = Math.sin(2 * Math.PI * yearDiff / 7) * 8;
+  const vitality = metricIndex(
+    lNPower * 0.4 + dayunBonus + uranusCycle + 5, // 時柱基礎加成
+    monthBonus.vitality
+  );
 
   return { wealth, career, love, vitality };
-}
-
-// Target trajectory: 2020(high) → 2022(valley) → 2029(new high) → 2030(slight decline)
-function yearTrajectory(year: number): number {
-  const peaks: Record<number,number> = { 0:82,1:72,2:42,3:55,4:62,5:70,6:76,7:82,8:88,9:92,10:78 };
-  const t = year - 2020;
-  return peaks[t] ?? 65;
 }
 
 function seededRand(seed: number): number {
@@ -179,39 +249,6 @@ function generateKLineData(
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
   const currentDay = now.getDate();
-  const dm = bazi?.dayPillar?.[0] || '丙';
-
-  // Pre-calculate base score for each time slot
-  const baseScore: number[] = [];
-  for (let i = 0; i < count; i++) {
-    let ty = currentYear, tm = currentMonth, td = currentDay;
-    if (tabKey === 'year') ty = 2020 + i;
-    else if (tabKey === 'month') tm = (i % 12) + 1;
-    else if (tabKey === 'week') td = i + 1;
-
-    const seed = ty * 10000 + tm * 100 + td;
-    const r1 = seededRand(seed);
-    const r2 = seededRand(seed + 7777);
-    const r3 = seededRand(seed + 5555);
-
-    const dmWx = WUXING_GAN[dm] || '火';
-    const baseBazi = WUXING_SCORE[dmWx] || 72;
-    const baziWave = Math.sin(2 * Math.PI * ((ty - 1981) % 60) / 10) * 10;
-    const S_bazi = baseBazi + baziWave + (r1 - 0.5) * 8;
-
-    const astroWave = Math.sin(2 * Math.PI * ((tm * 30 + td) % 360) / 30) * 12;
-    const S_astro = 72 + astroWave + (r2 - 0.5) * 8;
-
-    const S_random = 50 + (r3 - 0.5) * 16;
-
-    let S_total: number;
-    if (tabKey === 'year') {
-      S_total = yearTrajectory(ty);
-    } else {
-      S_total = 0.4 * S_bazi + 0.4 * S_astro + 0.2 * S_random;
-    }
-    baseScore.push(Math.max(20, Math.min(95, S_total)));
-  }
 
   const data: Array<{
     label: string;
@@ -219,50 +256,71 @@ function generateKLineData(
     high: number; low: number;
     isUp: boolean; isCurrent: boolean;
     wealth: number; career: number; love: number; vitality: number;
+    ma5?: number; ma10?: number;
   }> = [];
 
   for (let i = 0; i < count; i++) {
-    let label = '';
     let ty = currentYear, tm = currentMonth, td = currentDay;
-    if (tabKey === 'year') { ty = 2020 + i; label = `${ty}`; }
-    else if (tabKey === 'month') { tm = (i % 12) + 1; label = `${tm}月`; }
-    else if (tabKey === 'week') { td = i + 1; label = `第${i}天`; }
-    else { label = `${String(i).padStart(2,'0')}:00`; }
+    let label = '';
+    
+    if (tabKey === 'year') {
+      ty = 2020 + i;
+      label = `${ty}`;
+    } else if (tabKey === 'month') {
+      tm = (i % 12) + 1;
+      label = `${tm}月`;
+    } else if (tabKey === 'week') {
+      td = i + 1;
+      label = `第${i + 1}天`;
+    } else {
+      label = `${String(i).padStart(2,'0')}:00`;
+    }
 
-    const S = baseScore[i];
-    const prevS = i === 0 ? S : baseScore[i - 1];
-    const open = Math.max(20, Math.min(95, prevS + (seededRand(ty * 1000 + tm * 10 + td) - 0.5) * 4));
-    const current = Math.max(20, Math.min(95, (open + S) / 2 + (seededRand(ty * 2000 + tm * 20 + td) - 0.5) * 3));
-    const close = S;
-    const high = Math.max(open, current, close) + seededRand(ty * 3000 + i) * 4;
-    const low = Math.min(open, current, close) - seededRand(ty * 4000 + i) * 4;
+    // 四個維度成長指數（基準100）
+    const m = calcMetrics(bazi, western, ty, tm, td, currentYear, currentMonth, currentDay);
+    const totalIndex = Math.round((m.wealth + m.career + m.love + m.vitality) / 4);
+
+    // Open = 前一期 close，current = 期間中間值，close = 成長指數
+    const prevIndex = i === 0 ? totalIndex : data[i - 1].close;
+    const noise = (seededRand(ty * 1000 + tm * 10 + td) - 0.5) * 5;
+    const open = Math.max(75, Math.min(165, prevIndex + noise));
+    const current = Math.max(75, Math.min(165, (open + totalIndex) / 2 + (seededRand(ty * 2000 + tm * 20 + td) - 0.5) * 3));
+    const close = totalIndex;
+    const high = Math.max(open, current, close) + seededRand(ty * 3000 + i) * 3;
+    const low = Math.min(open, current, close) - seededRand(ty * 4000 + i) * 3;
 
     const isCurrent = (tabKey === 'year' && ty === currentYear) ||
                       (tabKey === 'month' && tm === currentMonth) ||
                       (tabKey === 'week' && td === currentDay) ||
                       (tabKey === 'day' && i === now.getHours());
 
+    // 陽線（紅）= 成長，陰線（綠）= 回落
     const isUp = close > open;
-    const seed2 = ty * 1000 + tm * 10 + td;
-    const wealth = Math.round(Math.max(20, Math.min(95, baseScore[i] * 0.8 + Math.sin(seed2) * 12)));
-    const career = Math.round(Math.max(20, Math.min(95, baseScore[i] * 0.75 + Math.cos(seed2) * 12)));
-    const love = Math.round(Math.max(20, Math.min(95, baseScore[i] * 0.7 + Math.sin(seed2 * 2) * 14)));
-    const vitality = Math.round(Math.max(20, Math.min(95, baseScore[i] * 0.65 + Math.cos(seed2 * 2) * 14)));
 
     data.push({
       label,
       open: Math.round(open),
       current: Math.round(current),
       close: Math.round(close),
-      high: Math.round(Math.min(98, high)),
-      low: Math.round(Math.max(15, low)),
+      high: Math.round(Math.min(170, high)),
+      low: Math.round(Math.max(70, low)),
       isUp,
       isCurrent,
-      wealth,
-      career,
-      love,
-      vitality,
+      wealth: m.wealth,
+      career: m.career,
+      love: m.love,
+      vitality: m.vitality,
     });
+  }
+
+  // MA5 / MA10（成長指數均線）
+  for (let i = 0; i < data.length; i++) {
+    if (i >= 4) {
+      data[i].ma5 = Math.round(data.slice(i - 4, i + 1).reduce((s, d) => s + d.close, 0) / 5);
+    }
+    if (i >= 9) {
+      data[i].ma10 = Math.round(data.slice(i - 9, i + 1).reduce((s, d) => s + d.close, 0) / 10);
+    }
   }
 
   return data;
@@ -456,7 +514,11 @@ export default function DashboardPage() {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {METRICS.map((m, i) => {
-                const val = metrics?.[m.key] ?? 60;
+                const val = metrics?.[m.key] ?? 100;
+                // 成長指數：100 = 基準，>100 = 成長，<100 = 低於基準
+                const growthLabel = val > 100 ? `+${val - 100}` : val < 100 ? `${val - 100}` : '0';
+                // Progress bar：70-170 映射到 0-100%
+                const barWidth = Math.min(100, Math.max(0, ((val - 70) / 100) * 100));
                 return (
                   <RevealSection key={m.key} delay={i * 100}>
                     <div 
@@ -468,10 +530,13 @@ export default function DashboardPage() {
                       }}
                     >
                       <div className="text-3xl mb-3">{m.emoji}</div>
-                      <div className="text-3xl font-bold mb-1" style={{ color: m.color, fontFamily: 'var(--font-mono)' }}>{val}</div>
+                      <div className="text-3xl font-bold mb-0.5" style={{ color: m.color, fontFamily: 'var(--font-mono)' }}>{val}</div>
+                      <div className="text-xs mb-1" style={{ color: val > 115 ? '#00FF88' : val < 90 ? '#FF3366' : '#666680' }}>
+                        {growthLabel}%
+                      </div>
                       <div className="text-xs mb-2" style={{ color: '#666680' }}>{m.name}</div>
                       <div className="h-1 rounded-full" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                        <div className="h-full rounded-full" style={{ width: val + '%', background: m.color, boxShadow: `0 0 6px ${m.color}` }} />
+                        <div className="h-full rounded-full" style={{ width: barWidth + '%', background: m.color, boxShadow: `0 0 6px ${m.color}` }} />
                       </div>
                     </div>
                   </RevealSection>
@@ -520,18 +585,58 @@ export default function DashboardPage() {
                         tick={{ fill: '#666680', fontSize: 11 }} 
                         interval="preserveStartEnd"
                       />
-                      <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: '#666680', fontSize: 11 }} />
+                      <YAxis 
+                        domain={[70, 170]} 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fill: '#666680', fontSize: 11 }}
+                        tickFormatter={v => `${v}`}
+                      />
                       
+                      {/* Reference line at 100 (baseline) */}
+                      <ReferenceLine y={100} stroke="rgba(255,255,255,0.1)" strokeDasharray="4 4" label={{ value: '基準100', position: 'insideTopRight', fill: 'rgba(255,255,255,0.25)', fontSize: 10 }} />
+
                       <Tooltip 
                         contentStyle={{ background: '#0D0D1A', border: '1px solid rgba(0,212,255,0.3)', borderRadius: '8px', color: '#E0E0E0', fontFamily: 'var(--font-mono)', fontSize: '12px' }}
                         formatter={(value: any, name: any) => {
-                          const names: Record<string, string> = { open: '開盤', current: '現在', close: '收盤', wealth: '財富', career: '事業', love: '感情', vitality: '能量' };
-                          return [`${value} 分`, `${names[String(name)] || String(name)}`];
+                          const names: Record<string, string> = { open: '開盤', current: '現在', close: '收盤', ma5: 'MA5', ma10: 'MA10', wealth: '💰財富', career: '💼事業', love: '❤️感情', vitality: '⚡能量' };
+                          return [`${value}`, `${names[String(name)] || String(name)}`];
                         }}
                         labelFormatter={(label: any) => `${label}`}
                       />
                       
-                      {/* 3 candles per time slot: open / current / close */}
+                      {/* MA5 line */}
+                      <Line type="monotone" dataKey="ma5" stroke="#8B5CF6" strokeWidth={1.5} dot={false} strokeDasharray="5 3" strokeOpacity={0.7} name="MA5" />
+                      
+                      {/* MA10 line */}
+                      <Line type="monotone" dataKey="ma10" stroke="#FF006E" strokeWidth={1.5} dot={false} strokeDasharray="5 3" strokeOpacity={0.5} name="MA10" />
+                      
+                      {/* 金叉死叉標記 */}
+                      {kData.map((d, i) => {
+                        if (i < 9 || !d.ma5 || !d.ma10) return null;
+                        const prev = kData[i - 1];
+                        if (!prev.ma5 || !prev.ma10) return null;
+                        const goldCross = prev.ma5 <= prev.ma10 && d.ma5 > d.ma10;
+                        const deathCross = prev.ma5 >= prev.ma10 && d.ma5 < d.ma10;
+                        if (!goldCross && !deathCross) return null;
+                        return (
+                          <ReferenceLine
+                            key={`cross-${d.label}`}
+                            x={d.label}
+                            stroke={goldCross ? '#00FF88' : '#FF3366'}
+                            strokeWidth={2}
+                            label={{
+                              value: goldCross ? '金叉' : '死叉',
+                              position: 'top',
+                              fill: goldCross ? '#00FF88' : '#FF3366',
+                              fontSize: 10,
+                              fontFamily: 'var(--font-mono)',
+                            }}
+                          />
+                        );
+                      })}
+                      
+                      {/* 3 candles: open / current / close */}
                       <Bar dataKey="open" fill="#444460" opacity={0.6} />
                       <Bar dataKey="current" fill="#00D4FF" opacity={0.85} />
                       <Bar dataKey="close" fill="#FF3366" opacity={0.9} />
@@ -541,17 +646,18 @@ export default function DashboardPage() {
                 <div className="flex flex-wrap gap-4 px-6 pb-3" style={{ borderTop: '1px solid rgba(0,212,255,0.06)' }}>
                   <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#444460', opacity: 0.6 }} /><span className="text-xs" style={{ color: '#666680' }}>開盤</span></div>
                   <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#00D4FF' }} /><span className="text-xs" style={{ color: '#666680' }}>現在</span></div>
-                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#FF3366' }} /><span className="text-xs" style={{ color: '#666680' }}>陽線（收&gt;開）</span></div>
-                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#00FF88' }} /><span className="text-xs" style={{ color: '#666680' }}>陰線（收&lt;開）</span></div>
-                  <div className="flex items-center gap-2 ml-auto text-xs" style={{ color: '#555570' }}>
-                    💰財富 💼事業 ❤️感情 ⚡能量
-                  </div>
+                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#FF3366' }} /><span className="text-xs" style={{ color: '#666680' }}>陽線（成長）</span></div>
+                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#00FF88' }} /><span className="text-xs" style={{ color: '#666680' }}>陰線（回落）</span></div>
+                  <div className="flex items-center gap-2"><div className="w-4 h-0.5 rounded" style={{ borderTop: '1.5px dashed #8B5CF6' }} /><span className="text-xs" style={{ color: '#666680' }}>MA5</span></div>
+                  <div className="flex items-center gap-2"><div className="w-4 h-0.5 rounded" style={{ borderTop: '1.5px dashed #FF006E' }} /><span className="text-xs" style={{ color: '#666680' }}>MA10</span></div>
+                  <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-sm" style={{ background: '#00FF88' }} /><span className="text-xs" style={{ color: '#666680' }}>金叉</span></div>
+                  <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-sm" style={{ background: '#FF3366' }} /><span className="text-xs" style={{ color: '#666680' }}>死叉</span></div>
                 </div>
-                {timeTab === 'year' && (
-                  <div className="px-6 pb-4 text-xs" style={{ color: '#555570', borderTop: '1px solid rgba(0,212,255,0.04)' }}>
-                    2020高點 → 2022谷底 → 2029新創高 → 2030回落
-                  </div>
-                )}
+                <div className="px-6 pb-4 text-xs space-y-1" style={{ color: '#555570', borderTop: '1px solid rgba(0,212,255,0.04)' }}>
+                  <div>指數 100 = 出生基準點　　&gt;100 = 成長低於基準　　&lt;100 = 低於基準</div>
+                  <div>陽線（紅）= 收盤 &gt; 開盤（能量累積，後期做決策）　　陰線（綠）= 收盤 &lt; 開盤（能量流失，建議及早處理）</div>
+                  <div>金叉（MA5上穿MA10）= 能量轉折上升　　死叉（MA5下穿MA10）= 能量轉折下降</div>
+                </div>
               </div>
             </RevealSection>
           </div>
