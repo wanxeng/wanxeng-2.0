@@ -1,5 +1,2 @@
 [build]
-command = "npm run build"
-
-[deploy]
-port = 3001
+dockerfile = "Dockerfile"
