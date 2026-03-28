@@ -1,19 +1,18 @@
-FROM node:22-alpine
+FROM node:22-slim
 
 WORKDIR /app
 
-# Install dependencies first (faster caching)
-COPY package*.json ./
-RUN npm install
+# Install deps first (layer caching)
+COPY package.json package-lock.json ./
+RUN npm ci --only=production && npm cache clean --force
 
 # Copy source
 COPY . .
 
 # Build
-RUN npm run build
+RUN npm run build && npm prune --production
 
-# Expose port
 EXPOSE 3001
+ENV NODE_ENV=production PORT=3001
 
-# Start
-CMD ["npm", "run", "start"]
+CMD ["npm", "start"]
