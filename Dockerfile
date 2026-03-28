@@ -1,18 +1,14 @@
-FROM node:22-slim
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Install deps first (layer caching)
-COPY package.json package-lock.json ./
-RUN npm ci --only=production && npm cache clean --force
+COPY package*.json ./
+RUN npm install
 
-# Copy source
 COPY . .
 
-# Build
-RUN npm run build && npm prune --production
+RUN npm run build
 
 EXPOSE 3001
-ENV NODE_ENV=production PORT=3001
 
 CMD ["npm", "start"]
