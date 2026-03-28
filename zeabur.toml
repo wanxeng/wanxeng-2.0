@@ -1,0 +1,10 @@
+# Zeabur deployment config
+# https://zeabur.com/docs
+
+[build]
+ command = "npm run build"
+ builder = "NEXTJS"
+
+[deploy]
+ port = 3001
+ healthCheckPath = "/"
