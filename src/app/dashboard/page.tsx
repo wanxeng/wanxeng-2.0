@@ -14,6 +14,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
+import { doc, getDoc } from "firebase/firestore";
 
 function RevealSection({ children, delay = 0, className = "" }: { children: React.ReactNode; delay?: number; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -181,7 +182,8 @@ function calcMetrics(
   targetDay: number,
   _currentYear: number,
   _currentMonth: number,
-  _currentDay: number
+  _currentDay: number,
+  firestoreMonthly?: any
 ) {
   const dm = bazi?.dayPillar?.[0] || '丙';
   const dmWx = WUXING_GAN[dm] || '火';
@@ -200,9 +202,12 @@ function calcMetrics(
   const dayunOffset = Math.floor(yearDiff / 10) % 10;
   const dayunBonus = Math.sin(dayunOffset * Math.PI / 5) * 8;
   
-  // 月份能量（星座旺點）
+  // 月份能量（星座旺點）- 優先使用 Firestore 設定，否則用預設值
   const monthKey = western?.sunSign || '天秤';
-  const monthBonus = ZODIAC_MONTH_BONUS[monthKey] || { wealth: 0, career: 0, love: 0, vitality: 0 };
+  let monthBonus = ZODIAC_MONTH_BONUS[monthKey] || { wealth: 0, career: 0, love: 0, vitality: 0 };
+  if (firestoreMonthly && firestoreMonthly[monthKey]) {
+    monthBonus = firestoreMonthly[monthKey];
+  }
   
   // ── 財富：年柱 + 財帛宮 + 流年能量 ──────────────────────────────
   // 財帛宮在月支，流年天干為用神時加分
@@ -244,6 +249,8 @@ function generateKLineData(
   western: any,
   tabKey: string,
   count: number,
+  yearlyConfigs?: any,
+  monthlyConfigs?: any,
   now: Date = new Date()
 ) {
   const currentYear = now.getFullYear();
@@ -277,7 +284,7 @@ function generateKLineData(
     }
 
     // 四個維度成長指數（基準100）
-    const m = calcMetrics(bazi, western, ty, tm, td, currentYear, currentMonth, currentDay);
+    const m = calcMetrics(bazi, western, ty, tm, td, currentYear, currentMonth, currentDay, monthlyConfigs);
     const totalIndex = Math.round((m.wealth + m.career + m.love + m.vitality) / 4);
 
     // Open = 前一期 close，current = 期間中間值，close = 成長指數
@@ -327,7 +334,7 @@ function generateKLineData(
 }
 
 // Derive current 4 metrics from analysis
-function generateMetricsFromAnalysis(analysisData: any) {
+function generateMetricsFromAnalysis(analysisData: any, firestoreMonthly?: any) {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
@@ -338,7 +345,8 @@ function generateMetricsFromAnalysis(analysisData: any) {
     analysisData?.bazi,
     analysisData?.western,
     currentYear, currentMonth, currentDay,
-    currentYear, currentMonth, currentDay
+    currentYear, currentMonth, currentDay,
+    firestoreMonthly
   );
   
   const total = Math.round((m.wealth + m.career + m.love + m.vitality) / 4);
@@ -373,11 +381,52 @@ export default function DashboardPage() {
   const [scrollProgress, setScrollProgress] = useState(0);
   const [metrics, setMetrics] = useState<any>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [formulaConfigs, setFormulaConfigs] = useState<any>(null);
+  const [yearlyConfigs, setYearlyConfigs] = useState<any>(null);
+  const [monthlyConfigs, setMonthlyConfigs] = useState<any>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
+  // Load formula configs from Firestore
+  useEffect(() => {
+    async function loadConfigs() {
+      try {
+        const { getDB } = await import("@/lib/firebase");
+        const dbInstance = getDB();
+        if (!dbInstance) return;
+
+        const [wealthSnap, careerSnap, loveSnap, vitalitySnap, yearlySnap, monthlySnap] = await Promise.all([
+          getDoc(doc(dbInstance, "formula_configs", "wealth")),
+          getDoc(doc(dbInstance, "formula_configs", "career")),
+          getDoc(doc(dbInstance, "formula_configs", "love")),
+          getDoc(doc(dbInstance, "formula_configs", "vitality")),
+          getDoc(doc(dbInstance, "formula_configs", "yearly_cycles")),
+          getDoc(doc(dbInstance, "formula_configs", "zodiac_monthly")),
+        ]);
+
+        if (wealthSnap.exists()) {
+          setFormulaConfigs({
+            wealth: wealthSnap.data(),
+            career: careerSnap.exists() ? careerSnap.data() : null,
+            love: loveSnap.exists() ? loveSnap.data() : null,
+            vitality: vitalitySnap.exists() ? vitalitySnap.data() : null,
+          });
+        }
+        if (yearlySnap.exists()) {
+          setYearlyConfigs(yearlySnap.data().data || {});
+        }
+        if (monthlySnap.exists()) {
+          setMonthlyConfigs(monthlySnap.data().data || {});
+        }
+      } catch (e) {
+        console.warn("Failed to load formula configs from Firestore:", e);
+      }
+    }
+    loadConfigs();
+  }, []);
+
   const kData = analysis
-    ? generateKLineData(analysis.bazi, analysis.western, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count)
-    : generateKLineData(null, null, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count);
+    ? generateKLineData(analysis.bazi, analysis.western, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs)
+    : generateKLineData(null, null, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs);
 
   useEffect(() => {
     const stored = localStorage.getItem('fatexi_user');
@@ -390,7 +439,7 @@ export default function DashboardPage() {
       if (cached) {
         const parsed = JSON.parse(cached);
         setAnalysis(parsed);
-        setMetrics(generateMetricsFromAnalysis(parsed));
+        setMetrics(generateMetricsFromAnalysis(parsed, monthlyConfigs));
       }
       
       // Fetch fresh analysis only if no cached result
@@ -420,7 +469,7 @@ export default function DashboardPage() {
             if (result.success && result.data) {
               setAnalysis(result.data);
               localStorage.setItem('fatexi_analysis', JSON.stringify(result.data));
-              setMetrics(generateMetricsFromAnalysis(result.data));
+              setMetrics(generateMetricsFromAnalysis(result.data, monthlyConfigs));
             }
           })
           .catch(() => {
@@ -429,17 +478,17 @@ export default function DashboardPage() {
           });
       }
     }
-  }, []);
+  }, [monthlyConfigs]);
 
   // Refresh metrics every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       if (analysis) {
-        setMetrics(generateMetricsFromAnalysis(analysis));
+        setMetrics(generateMetricsFromAnalysis(analysis, monthlyConfigs));
       }
     }, 30000);
     return () => clearInterval(interval);
-  }, [analysis]);
+  }, [analysis, monthlyConfigs]);
 
   useEffect(() => {
     const handleScroll = () => {

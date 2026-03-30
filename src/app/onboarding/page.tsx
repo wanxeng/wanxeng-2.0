@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import FatexiBall from "@/components/FatexiBall";
+import { serverTimestamp } from "firebase/firestore";
 
 function LoadingState() {
   return (
@@ -184,6 +185,41 @@ export default function OnboardingPage() {
       setAnalysisResult(result.data);
       // Save to localStorage for dashboard to read
       localStorage.setItem('fatexi_analysis', JSON.stringify(result.data));
+      
+      // Save complete analysis to Firestore
+      try {
+        const { getDB } = await import("@/lib/firebase");
+        const dbInstance = getDB();
+        if (dbInstance) {
+          const { collection, addDoc, query, where, getDocs } = await import("firebase/firestore");
+          // Find the user document by name and birth data
+          const q = query(
+            collection(dbInstance, "users"),
+            where("name", "==", userData.name),
+            where("year", "==", userData.year),
+            where("month", "==", userData.month),
+            where("day", "==", userData.day)
+          );
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            const { doc, updateDoc } = await import("firebase/firestore");
+            const userDocId = snap.docs[0].id;
+            await updateDoc(doc(dbInstance, "users", userDocId), {
+              bazi: result.data.bazi || {},
+              western: result.data.western || {},
+              analysis: result.data.analysis || "",
+              fiveElements: result.data.bazi?.fiveElements || {},
+              tenGods: result.data.bazi?.tenGods || {},
+              dayMaster: result.data.bazi?.dayMaster || "",
+              dayPillar: result.data.bazi?.dayPillar || "",
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to save analysis to Firestore:", e);
+      }
+      
       setPhase('result');
     } catch (e: any) {
       if (e.name === 'AbortError') {
