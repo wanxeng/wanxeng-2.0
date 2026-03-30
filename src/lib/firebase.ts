@@ -2,14 +2,14 @@ import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
 
-// Firebase config - only available in browser
+// Hardcoded Firebase config for testing - replace with environment variables in production
 const firebaseConfig = {
-  apiKey: typeof window !== "undefined" ? process.env.NEXT_PUBLIC_FIREBASE_API_KEY : undefined,
-  authDomain: typeof window !== "undefined" ? process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN : undefined,
-  projectId: typeof window !== "undefined" ? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID : undefined,
-  storageBucket: typeof window !== "undefined" ? process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET : undefined,
-  messagingSenderId: typeof window !== "undefined" ? process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID : undefined,
-  appId: typeof window !== "undefined" ? process.env.NEXT_PUBLIC_FIREBASE_APP_ID : undefined,
+  apiKey: "AIzaSyAbXudXqsjwWxv_iEvdVpvN4dW7X2oxFfc",
+  authDomain: "project-9fde4fd7-75d9-4cad-a3e.firebaseapp.com",
+  projectId: "project-9fde4fd7-75d9-4cad-a3e",
+  storageBucket: "project-9fde4fd7-75d9-4cad-a3e.firebasestorage.app",
+  messagingSenderId: "300565307201",
+  appId: "1:300565307201:web:41cea0ed279320f0458bc0",
 };
 
 // Lazy initialization - only runs in browser
@@ -54,8 +54,4 @@ export function getGoogleProvider(): GoogleAuthProvider | null {
   return _googleProvider;
 }
 
-// Export null-safe aliases for convenience
-export const db = getDB();
-export const auth = getAuthInstance();
-export const googleProvider = getGoogleProvider();
 export default getFirebaseApp;
