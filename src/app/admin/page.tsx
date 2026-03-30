@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
-import { auth, googleProvider } from "@/lib/firebase";
+import { getAuthInstance, getGoogleProvider } from "@/lib/firebase";
 import {
   collection,
   getDocs,
@@ -13,7 +13,7 @@ import {
   where,
   Timestamp,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { getDB } from "@/lib/firebase";
 
 interface User {
   id: string;
@@ -40,11 +40,12 @@ export default function AdminPage() {
   const [stats, setStats] = useState({ total: 0, today: 0 });
 
   useEffect(() => {
-    if (!auth) {
+    const authInstance = getAuthInstance();
+    if (!authInstance) {
       setLoading(false);
       return;
     }
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const unsub = onAuthStateChanged(authInstance, (u) => {
       setUser(u);
       setLoading(false);
     });
@@ -59,17 +60,18 @@ export default function AdminPage() {
   }, [user]);
 
   async function fetchUsers(isNextPage = false) {
-    if (!db) return;
+    const dbInstance = getDB();
+    if (!dbInstance) return;
     try {
       let q = query(
-        collection(db, "users"),
+        collection(dbInstance, "users"),
         orderBy("registeredAt", "desc"),
         limit(20)
       );
 
       if (isNextPage && lastDoc) {
         q = query(
-          collection(db, "users"),
+          collection(dbInstance, "users"),
           orderBy("registeredAt", "desc"),
           startAfter(lastDoc),
           limit(20)
@@ -78,7 +80,7 @@ export default function AdminPage() {
 
       if (search.trim()) {
         q = query(
-          collection(db, "users"),
+          collection(dbInstance, "users"),
           where("name", ">=", search),
           where("name", "<=", search + "\uf8ff"),
           orderBy("name"),
@@ -106,9 +108,10 @@ export default function AdminPage() {
   }
 
   async function fetchStats() {
-    if (!db) return;
+    const dbInstance = getDB();
+    if (!dbInstance) return;
     try {
-      const snap = await getDocs(collection(db, "users"));
+      const snap = await getDocs(collection(dbInstance, "users"));
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayCount = snap.docs.filter((doc) => {
@@ -124,17 +127,20 @@ export default function AdminPage() {
   }
 
   async function handleSignIn() {
-    if (!auth || !googleProvider) return;
+    const authInstance = getAuthInstance();
+    const provider = getGoogleProvider();
+    if (!authInstance || !provider) return;
     try {
-      await signInWithPopup(auth, googleProvider);
+      await signInWithPopup(authInstance, provider);
     } catch (e) {
       console.error("Sign in error:", e);
     }
   }
 
   async function handleSignOut() {
-    if (!auth) return;
-    await signOut(auth);
+    const authInstance = getAuthInstance();
+    if (!authInstance) return;
+    await signOut(authInstance);
     setUsers([]);
   }
 

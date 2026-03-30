@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { db } from "@/lib/firebase";
+import { getDB } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 const SHI_CHEN = [
@@ -56,9 +56,10 @@ export default function RegisterPage() {
       localStorage.setItem('fatexi_user', JSON.stringify(form));
 
       // Save to Firestore with timeout
-      if (db) {
+      const dbInstance = getDB();
+      if (dbInstance) {
         try {
-          const writePromise = addDoc(collection(db, "users"), {
+          const writePromise = addDoc(collection(dbInstance, "users"), {
             ...form,
             registeredAt: serverTimestamp(),
             status: "active",
