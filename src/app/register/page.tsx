@@ -56,18 +56,20 @@ export default function RegisterPage() {
       localStorage.setItem('fatexi_user', JSON.stringify(form));
 
       // Save to Firestore with timeout
-      try {
-        const writePromise = addDoc(collection(db, "users"), {
-          ...form,
-          registeredAt: serverTimestamp(),
-          status: "active",
-        });
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Firestore timeout')), 5000)
-        );
-        await Promise.race([writePromise, timeoutPromise]);
-      } catch (e) {
-        console.warn("Firestore write failed, continuing anyway:", e);
+      if (db) {
+        try {
+          const writePromise = addDoc(collection(db, "users"), {
+            ...form,
+            registeredAt: serverTimestamp(),
+            status: "active",
+          });
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Firestore timeout')), 5000)
+          );
+          await Promise.race([writePromise, timeoutPromise]);
+        } catch (e) {
+          console.warn("Firestore write failed, continuing anyway:", e);
+        }
       }
 
       await new Promise(r => setTimeout(r, 500));
