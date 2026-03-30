@@ -40,6 +40,10 @@ export default function AdminPage() {
   const [stats, setStats] = useState({ total: 0, today: 0 });
 
   useEffect(() => {
+    if (!auth) {
+      setLoading(false);
+      return;
+    }
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
@@ -55,6 +59,7 @@ export default function AdminPage() {
   }, [user]);
 
   async function fetchUsers(isNextPage = false) {
+    if (!db) return;
     try {
       let q = query(
         collection(db, "users"),
@@ -101,6 +106,7 @@ export default function AdminPage() {
   }
 
   async function fetchStats() {
+    if (!db) return;
     try {
       const snap = await getDocs(collection(db, "users"));
       const today = new Date();
@@ -118,6 +124,7 @@ export default function AdminPage() {
   }
 
   async function handleSignIn() {
+    if (!auth || !googleProvider) return;
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (e) {
@@ -126,6 +133,7 @@ export default function AdminPage() {
   }
 
   async function handleSignOut() {
+    if (!auth) return;
     await signOut(auth);
     setUsers([]);
   }

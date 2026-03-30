@@ -11,9 +11,17 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-export const db = getFirestore(app);
-export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
+// Only initialize Firebase on the client side to prevent build errors
+let db: ReturnType<typeof getFirestore> | null = null;
+let auth: ReturnType<typeof getAuth> | null = null;
+let googleProvider: GoogleAuthProvider | null = null;
+let app: ReturnType<typeof initializeApp> | null = null;
 
-export default app;
+if (typeof window !== "undefined") {
+  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+  db = getFirestore(app);
+  auth = getAuth(app);
+  googleProvider = new GoogleAuthProvider();
+}
+
+export { db, auth, googleProvider, app };
