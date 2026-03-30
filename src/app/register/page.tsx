@@ -3,8 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getDB } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 const SHI_CHEN = [
   { value: "子", label: "子 (23:00-00:59)" },
@@ -55,10 +53,12 @@ export default function RegisterPage() {
       setLoading(true);
       localStorage.setItem('fatexi_user', JSON.stringify(form));
 
-      // Save to Firestore with timeout
-      const dbInstance = getDB();
-      if (dbInstance) {
-        try {
+      // Save to Firestore with timeout (dynamic import to avoid SSR issues)
+      try {
+        const { getDB } = await import("@/lib/firebase");
+        const { collection, addDoc, serverTimestamp } = await import("firebase/firestore");
+        const dbInstance = getDB();
+        if (dbInstance) {
           const writePromise = addDoc(collection(dbInstance, "users"), {
             ...form,
             registeredAt: serverTimestamp(),
@@ -68,9 +68,9 @@ export default function RegisterPage() {
             setTimeout(() => reject(new Error('Firestore timeout')), 5000)
           );
           await Promise.race([writePromise, timeoutPromise]);
-        } catch (e) {
-          console.warn("Firestore write failed, continuing anyway:", e);
         }
+      } catch (e) {
+        console.warn("Firestore write failed, continuing anyway:", e);
       }
 
       await new Promise(r => setTimeout(r, 500));

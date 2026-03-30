@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
-import { getAuthInstance, getGoogleProvider } from "@/lib/firebase";
+import { useState, useEffect, useCallback } from "react";
 import {
   collection,
   getDocs,
@@ -12,44 +10,61 @@ import {
   startAfter,
   where,
   Timestamp,
+  type Firestore,
 } from "firebase/firestore";
-import { getDB } from "@/lib/firebase";
-
-interface User {
-  id: string;
-  name: string;
-  year: string;
-  month: string;
-  day: string;
-  hour: string;
-  gender: string;
-  location: string;
-  registeredAt: Timestamp | null;
-  status: string;
-}
+import type { User as FirebaseUser } from "firebase/auth";
 
 const ADMIN_EMAIL = "yowaytsao@gmail.com";
 
 export default function AdminPage() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<User[]>([]);
   const [lastDoc, setLastDoc] = useState<any>(null);
   const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
   const [stats, setStats] = useState({ total: 0, today: 0 });
+  const [error, setError] = useState<string | null>(null);
 
+  // Dynamically import Firebase to avoid SSR issues
   useEffect(() => {
-    const authInstance = getAuthInstance();
-    if (!authInstance) {
-      setLoading(false);
-      return;
+    let db: Firestore | null = null;
+    let auth: any = null;
+    let googleProvider: any = null;
+
+    async function initFirebase() {
+      try {
+        const { getDB, getAuthInstance, getGoogleProvider } = await import("@/lib/firebase");
+        
+        db = getDB();
+        auth = getAuthInstance();
+        googleProvider = getGoogleProvider();
+
+        if (!auth) {
+          setLoading(false);
+          return;
+        }
+
+        // Import Firebase auth functions dynamically
+        const { onAuthStateChanged, signInWithPopup, signOut } = await import("firebase/auth");
+
+        const unsub = onAuthStateChanged(auth, (u: FirebaseUser | null) => {
+          setUser(u);
+          setLoading(false);
+        });
+
+        return unsub;
+      } catch (e: any) {
+        console.error("Firebase init error:", e);
+        setError(e.message || "Firebase initialization failed");
+        setLoading(false);
+      }
     }
-    const unsub = onAuthStateChanged(authInstance, (u) => {
-      setUser(u);
-      setLoading(false);
-    });
-    return unsub;
+
+    const cleanup = initFirebase();
+    return () => {
+      cleanup.then((unsub: any) => unsub && unsub());
+    };
   }, []);
 
   useEffect(() => {
@@ -60,9 +75,11 @@ export default function AdminPage() {
   }, [user]);
 
   async function fetchUsers(isNextPage = false) {
-    const dbInstance = getDB();
-    if (!dbInstance) return;
     try {
+      const { getDB } = await import("@/lib/firebase");
+      const dbInstance = getDB();
+      if (!dbInstance) return;
+
       let q = query(
         collection(dbInstance, "users"),
         orderBy("registeredAt", "desc"),
@@ -108,9 +125,11 @@ export default function AdminPage() {
   }
 
   async function fetchStats() {
-    const dbInstance = getDB();
-    if (!dbInstance) return;
     try {
+      const { getDB } = await import("@/lib/firebase");
+      const dbInstance = getDB();
+      if (!dbInstance) return;
+
       const snap = await getDocs(collection(dbInstance, "users"));
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -127,10 +146,13 @@ export default function AdminPage() {
   }
 
   async function handleSignIn() {
-    const authInstance = getAuthInstance();
-    const provider = getGoogleProvider();
-    if (!authInstance || !provider) return;
     try {
+      const { getAuthInstance, getGoogleProvider } = await import("@/lib/firebase");
+      const authInstance = getAuthInstance();
+      const provider = getGoogleProvider();
+      if (!authInstance || !provider) return;
+
+      const { signInWithPopup } = await import("firebase/auth");
       await signInWithPopup(authInstance, provider);
     } catch (e) {
       console.error("Sign in error:", e);
@@ -138,10 +160,17 @@ export default function AdminPage() {
   }
 
   async function handleSignOut() {
-    const authInstance = getAuthInstance();
-    if (!authInstance) return;
-    await signOut(authInstance);
-    setUsers([]);
+    try {
+      const { getAuthInstance } = await import("@/lib/firebase");
+      const authInstance = getAuthInstance();
+      if (!authInstance) return;
+
+      const { signOut } = await import("firebase/auth");
+      await signOut(authInstance);
+      setUsers([]);
+    } catch (e) {
+      console.error("Sign out error:", e);
+    }
   }
 
   function formatDate(ts: Timestamp | null) {
@@ -159,6 +188,21 @@ export default function AdminPage() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "#030308" }}>
         <p style={{ color: "#666680" }}>載入中...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center" style={{ background: "#030308" }}>
+        <p style={{ color: "#FF3366" }}>初始化錯誤: {error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-4 px-4 py-2 rounded-lg"
+          style={{ background: "rgba(0,212,255,0.15)", color: "#00D4FF" }}
+        >
+          重新整理
+        </button>
       </div>
     );
   }
@@ -320,4 +364,17 @@ export default function AdminPage() {
       </div>
     </div>
   );
+}
+
+interface User {
+  id: string;
+  name: string;
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  gender: string;
+  location: string;
+  registeredAt: Timestamp | null;
+  status: string;
 }
