@@ -2,10 +2,13 @@ FROM node:22-slim
 
 WORKDIR /src
 
-# Copy package files
+# Set memory limit for build
+ENV NODE_OPTIONS="--max-old-space-size=1024"
+
+# Copy package files first for better caching
 COPY package.json package-lock.json* ./
 
-# Install dependencies (skip scripts to avoid npm update issues)
+# Install dependencies
 RUN npm install --ignore-scripts
 
 # Copy source code
@@ -17,5 +20,4 @@ RUN npm run build
 # Expose port
 EXPOSE 3001
 
-# Start the app
 CMD ["npm", "start"]
