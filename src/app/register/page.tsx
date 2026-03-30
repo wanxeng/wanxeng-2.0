@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 const SHI_CHEN = [
   { value: "子", label: "子 (23:00-00:59)" },
@@ -52,6 +54,18 @@ export default function RegisterPage() {
       // Submit and go to onboarding
       setLoading(true);
       localStorage.setItem('fatexi_user', JSON.stringify(form));
+
+      // Save to Firestore
+      try {
+        await addDoc(collection(db, "users"), {
+          ...form,
+          registeredAt: serverTimestamp(),
+          status: "active",
+        });
+      } catch (e) {
+        console.warn("Firestore write failed, continuing anyway:", e);
+      }
+
       await new Promise(r => setTimeout(r, 800));
       router.push('/onboarding');
     }
