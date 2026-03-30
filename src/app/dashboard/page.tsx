@@ -115,7 +115,7 @@ function liuNianPower(dm: string, liuNianGZ: string): number {
   const heHuaWx = heHua[dm + lNgan] || null;
   
   // 地支會方（地支三合局）
-  const huiFang: Record<string,string[]> = {
+  const huiFang: Record<string,string> = {
     '申子辰':'水','亥卯未':'木','寅午戌':'火','巳酉丑':'金'
   };
   let huiFangBonus = 0;

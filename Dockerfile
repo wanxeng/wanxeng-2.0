@@ -1,23 +1,16 @@
-FROM node:22-slim
-
-WORKDIR /src
-
-# Set memory limit for build
-ENV NODE_OPTIONS="--max-old-space-size=1024"
-
-# Copy package files first for better caching
-COPY package.json package-lock.json* ./
-
-# Install dependencies
-RUN npm install --ignore-scripts
-
-# Copy source code
+# Build stage
+FROM node:22 AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm install
 COPY . .
-
-# Build the app
 RUN npm run build
 
-# Expose port
+# Runtime stage
+FROM node:22-slim
+WORKDIR /app
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static .next/static
+COPY --from=builder /app/public ./public
 EXPOSE 3001
-
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
