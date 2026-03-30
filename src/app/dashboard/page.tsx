@@ -432,12 +432,37 @@ export default function DashboardPage() {
     loadConfigs();
   }, []);
 
-  // Use new K-line data if available, otherwise fallback to old logic
-  const displayKData = newKLineData.length > 0
-    ? newKLineData
-    : (analysis
-        ? generateKLineData(analysis.bazi, analysis.western, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs)
-        : generateKLineData(null, null, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs));
+  // Generate different data based on time tab
+  let displayKData: any[] = [];
+  
+  if (timeTab === 'year') {
+    // Year view: use new yearly K-line data (70 years from birth)
+    displayKData = newKLineData.length > 0
+      ? newKLineData
+      : (analysis
+          ? generateKLineData(analysis.bazi, analysis.western, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs)
+          : generateKLineData(null, null, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs));
+  } else if (timeTab === 'month') {
+    // Month view: use monthly K-line data
+    const currentYear = new Date().getFullYear();
+    if (newKLineData.length > 0) {
+      // Generate monthly data using the same engine
+      displayKData = newGenerateMonthlyKLineData(
+        analysis?.bazi || {},
+        formulaConfigs || {},
+        yearlyConfigs || {},
+        monthlyConfigs || {},
+        currentYear
+      );
+    } else {
+      displayKData = generateKLineData(analysis?.bazi, analysis?.western, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs);
+    }
+  } else {
+    // Day/Week view: use old logic for now
+    displayKData = analysis
+      ? generateKLineData(analysis.bazi, analysis.western, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs)
+      : generateKLineData(null, null, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs);
+  }
   
   const kData = displayKData;
 
