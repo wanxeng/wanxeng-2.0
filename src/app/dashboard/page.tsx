@@ -707,9 +707,10 @@ export default function DashboardPage() {
                         contentStyle={{ background: '#0D0D1A', border: '1px solid rgba(0,212,255,0.3)', borderRadius: '8px', color: '#E0E0E0', fontFamily: 'var(--font-mono)', fontSize: '12px' }}
                         formatter={(value: any, name: any) => {
                           const names: Record<string, string> = { open: '開盤', current: '現在', close: '收盤', ma5: 'MA5', ma10: 'MA10', wealth: '💰財富', career: '💼事業', love: '❤️感情', vitality: '⚡能量' };
-                          return [`${value}`, `${names[String(name)] || String(name)}`];
+                          return [`${typeof value === 'number' ? value.toFixed(1) : value}`, `${names[String(name)] || String(name)}`];
                         }}
                         labelFormatter={(label: any) => `${label}`}
+                        cursor={{ stroke: 'rgba(0,212,255,0.3)', strokeWidth: 1 }}
                       />
                       
                       {/* MA5 line */}
@@ -743,26 +744,71 @@ export default function DashboardPage() {
                         );
                       })}
                       
-                      {/* 3 candles: open / current / close */}
-                      <Bar dataKey="open" fill="#444460" opacity={0.6} />
-                      <Bar dataKey="current" fill="#00D4FF" opacity={0.85} />
-                      <Bar dataKey="close" fill="#FF3366" opacity={0.9} />
+                      {/* Candlestick bars: full range from low to high */}
+                      <Bar 
+                        dataKey="high" 
+                        fill="#1a1a2e" 
+                        opacity={0}
+                      />
+                      <Bar 
+                        dataKey="low" 
+                        fill="#1a1a2e" 
+                        opacity={0}
+                      />
+                      
+                      {/* Custom candlestick rendering using custom shape */}
+                      <Bar 
+                        dataKey="close" 
+                        shape={(props: any) => {
+                          const { x, y, width, height, payload } = props;
+                          if (!payload) return null;
+                          
+                          const { open, close, high, low, isUp } = payload;
+                          const color = isUp ? '#00FF88' : '#FF3366';
+                          const bodyTop = Math.max(y, y - height + (height * (100 - Math.min(close, 180)) / 60));
+                          const bodyBottom = Math.max(y, y - height + (height * (100 - Math.min(open, 180)) / 60));
+                          const bodyHeight = Math.max(2, Math.abs(bodyBottom - bodyTop));
+                          
+                          // Wick (shadow) - line from low to high
+                          const wickX = x + width / 2;
+                          const wickTop = y - height + (height * (100 - Math.min(Math.max(high, 70), 180)) / 60);
+                          const wickBottom = y - height + (height * (100 - Math.min(Math.max(low, 70), 180)) / 60);
+                          
+                          return (
+                            <g>
+                              {/* Upper wick */}
+                              <line x1={wickX} y1={wickTop} x2={wickX} y2={bodyTop} stroke={color} strokeWidth={1.5} />
+                              {/* Lower wick */}
+                              <line x1={wickX} y1={bodyBottom} x2={wickX} y2={wickBottom} stroke={color} strokeWidth={1.5} />
+                              {/* Body */}
+                              <rect 
+                                x={x + 2} 
+                                y={bodyTop} 
+                                width={Math.max(4, width - 4)} 
+                                height={bodyHeight}
+                                fill={color}
+                                opacity={0.9}
+                                rx={1}
+                              />
+                            </g>
+                          );
+                        }}
+                        name="K線"
+                      />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
                 <div className="flex flex-wrap gap-4 px-6 pb-3" style={{ borderTop: '1px solid rgba(0,212,255,0.06)' }}>
-                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#444460', opacity: 0.6 }} /><span className="text-xs" style={{ color: '#666680' }}>開盤</span></div>
-                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#00D4FF' }} /><span className="text-xs" style={{ color: '#666680' }}>現在</span></div>
-                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#FF3366' }} /><span className="text-xs" style={{ color: '#666680' }}>陽線（成長）</span></div>
-                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#00FF88' }} /><span className="text-xs" style={{ color: '#666680' }}>陰線（回落）</span></div>
+                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#00FF88' }} /><span className="text-xs" style={{ color: '#666680' }}>陽線（能量↑）</span></div>
+                  <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: '#FF3366' }} /><span className="text-xs" style={{ color: '#666680' }}>陰線（能量↓）</span></div>
                   <div className="flex items-center gap-2"><div className="w-4 h-0.5 rounded" style={{ borderTop: '1.5px dashed #8B5CF6' }} /><span className="text-xs" style={{ color: '#666680' }}>MA5</span></div>
                   <div className="flex items-center gap-2"><div className="w-4 h-0.5 rounded" style={{ borderTop: '1.5px dashed #FF006E' }} /><span className="text-xs" style={{ color: '#666680' }}>MA10</span></div>
                   <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-sm" style={{ background: '#00FF88' }} /><span className="text-xs" style={{ color: '#666680' }}>金叉</span></div>
                   <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-sm" style={{ background: '#FF3366' }} /><span className="text-xs" style={{ color: '#666680' }}>死叉</span></div>
                 </div>
                 <div className="px-6 pb-4 text-xs space-y-1" style={{ color: '#555570', borderTop: '1px solid rgba(0,212,255,0.04)' }}>
-                  <div>指數 100 = 出生基準點　　&gt;100 = 成長低於基準　　&lt;100 = 低於基準</div>
-                  <div>陽線（紅）= 收盤 &gt; 開盤（能量累積，後期做決策）　　陰線（綠）= 收盤 &lt; 開盤（能量流失，建議及早處理）</div>
+                  <div>K線 = 能量高低（75=中等，100=良好，125+=極佳）</div>
+                  <div>陽線（綠）= 收盤 &gt; 開盤（能量上升）　　陰線（紅）= 收盤 &lt; 開盤（能量回落）</div>
                   <div>金叉（MA5上穿MA10）= 能量轉折上升　　死叉（MA5下穿MA10）= 能量轉折下降</div>
                 </div>
               </div>
