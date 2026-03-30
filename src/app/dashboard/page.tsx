@@ -15,6 +15,12 @@ import {
   ReferenceLine,
 } from "recharts";
 import { doc, getDoc } from "firebase/firestore";
+import { 
+  generateKLineData as newGenerateKLineData,
+  generateMonthlyKLineData as newGenerateMonthlyKLineData,
+  calculateScores as newCalculateScores,
+  type KLineData 
+} from "@/lib/scoring";
 
 function RevealSection({ children, delay = 0, className = "" }: { children: React.ReactNode; delay?: number; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -384,6 +390,7 @@ export default function DashboardPage() {
   const [formulaConfigs, setFormulaConfigs] = useState<any>(null);
   const [yearlyConfigs, setYearlyConfigs] = useState<any>(null);
   const [monthlyConfigs, setMonthlyConfigs] = useState<any>(null);
+  const [newKLineData, setNewKLineData] = useState<KLineData[]>([]);
   const mainRef = useRef<HTMLDivElement>(null);
 
   // Load formula configs from Firestore
@@ -403,13 +410,14 @@ export default function DashboardPage() {
           getDoc(doc(dbInstance, "formula_configs", "zodiac_monthly")),
         ]);
 
-        if (wealthSnap.exists()) {
-          setFormulaConfigs({
-            wealth: wealthSnap.data(),
-            career: careerSnap.exists() ? careerSnap.data() : null,
-            love: loveSnap.exists() ? loveSnap.data() : null,
-            vitality: vitalitySnap.exists() ? vitalitySnap.data() : null,
-          });
+        const formulas: Record<string, any> = {};
+        if (wealthSnap.exists()) formulas['wealth'] = wealthSnap.data();
+        if (careerSnap.exists()) formulas['career'] = careerSnap.data();
+        if (loveSnap.exists()) formulas['love'] = loveSnap.data();
+        if (vitalitySnap.exists()) formulas['vitality'] = vitalitySnap.data();
+        
+        if (Object.keys(formulas).length > 0) {
+          setFormulaConfigs(formulas);
         }
         if (yearlySnap.exists()) {
           setYearlyConfigs(yearlySnap.data().data || {});
@@ -424,9 +432,14 @@ export default function DashboardPage() {
     loadConfigs();
   }, []);
 
-  const kData = analysis
-    ? generateKLineData(analysis.bazi, analysis.western, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs)
-    : generateKLineData(null, null, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs);
+  // Use new K-line data if available, otherwise fallback to old logic
+  const displayKData = newKLineData.length > 0
+    ? newKLineData
+    : (analysis
+        ? generateKLineData(analysis.bazi, analysis.western, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs)
+        : generateKLineData(null, null, timeTab, TIME_TABS.find(t => t.key === timeTab)!.count, yearlyConfigs, monthlyConfigs));
+  
+  const kData = displayKData;
 
   useEffect(() => {
     const stored = localStorage.getItem('fatexi_user');
@@ -489,6 +502,26 @@ export default function DashboardPage() {
     }, 30000);
     return () => clearInterval(interval);
   }, [analysis, monthlyConfigs]);
+
+  // Generate new K-line data when analysis and configs are available
+  useEffect(() => {
+    if (!analysis || !formulaConfigs) return;
+    
+    const bazi = analysis?.bazi || {};
+    const birthYear = bazi?.birthYear || new Date().getFullYear();
+    
+    try {
+      const data = newGenerateKLineData(
+        { ...bazi, birthYear },
+        formulaConfigs,
+        yearlyConfigs,
+        monthlyConfigs
+      );
+      setNewKLineData(data);
+    } catch (e) {
+      console.warn("Failed to generate new K-line data:", e);
+    }
+  }, [analysis, formulaConfigs, yearlyConfigs, monthlyConfigs]);
 
   useEffect(() => {
     const handleScroll = () => {
