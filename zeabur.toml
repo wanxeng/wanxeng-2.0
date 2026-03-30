@@ -1,5 +1,6 @@
 [build]
-command = "npm run build"
+command = "npm install --ignore-scripts && npm run build"
+installCommand = "npm install --ignore-scripts"
 
 [deploy]
 port = 3001

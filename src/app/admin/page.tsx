@@ -28,7 +28,7 @@ interface User {
   status: string;
 }
 
-const ADMIN_EMAIL = "willytakao@gmail.com";
+const ADMIN_EMAIL = "yowaytsao@gmail.com";
 
 export default function AdminPage() {
   const [user, setUser] = useState<any>(null);
